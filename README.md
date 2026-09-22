@@ -12,8 +12,8 @@
 
 **① 一键下载（文件就在本仓库里，点完直接开始下）**
 
-👉 **[点这里下载便携版 zip](https://github.com/xingyueweiwei/dsh-fatfish-rescuer/raw/main/download/BigFatFishRescuer_v5.0.2_portable.zip)** —— 2,138,207 字节
-sha256：`845178EC3270C4B2BDC24437073BE45FDC274877060ABFEB629C006054B003ED`
+👉 **[点这里下载便携版 zip](https://github.com/xingyueweiwei/dsh-fatfish-rescuer/raw/main/download/BigFatFishRescuer_v5.0.3_portable.zip)** —— 2,124,172 字节
+sha256：`8914A8EF441308E7A472BE76060016EBE9CB167B31185D471A9B9FF1F54BD9F4`
 
 **② 或者去 [Releases 页](https://github.com/xingyueweiwei/dsh-fatfish-rescuer/releases)**（版本更新走那边）
 
@@ -88,10 +88,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1   # 只用 Windows
 ```
 --fix-apply <动作id>  执行某条修复      --fixdangling  清理悬空引用
 --dedup               去掉重复条目      --enableentry / --disableentry  启用/禁用某条目
+--conflict-disable <id>  关掉"打架的那条登记"（先快照 → 只改一处 → **重扫雷达复验**）
 --patchlock-fix       重打补丁          --reinstall    重装插件
 --autorecover         自动恢复          --smart        一键智能启动（健康则只打开）
 --start / --open      起服务 / 打开页面 --skin         换皮肤
 ```
+
+界面上同样有：**🧩 插件打架体检**（只读）与 **🧩 关掉打架的那条**（写动作，带二次确认）。
+
+### `--conflict-disable <id>` 的三条纪律（都是代码里写死的门，不是文案）
+
+1. **不带 id** ⇒ 只列候选，**一个字节都不写**；
+2. **id 没参与任何硬红** ⇒ **拒绝执行 + 一个字节都不写**（不设这道门，它迟早变成一颗"万能禁用按钮"）；
+3. 动手后**重扫雷达真复验**；复验不过**不自动回滚**（文件可能完全合法、只是还没热生效）⇒ 报告 + 快照路径 + 回滚办法，退出码 `2`。
+
+退出码：`0` 改了且复验通过 / `1` 拒绝或没改动 / `2` 改了但雷达上那条红还在。
 
 ## 它怎么证明自己
 
@@ -109,8 +120,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1   # 只用 Windows
 
 ## 已知短板（别当成做完了）
 
-- **插件冲突只能看清 + 预演，不能替你把冲突改掉**：真正的写动作（自动禁用一个冲突条目）**尚未实现**；
-- 冲突雷达**只有命令行入口，界面上没有按钮**；
+- **冲突雷达的复验尺子量不出"禁用型"改动**：`disabled:` 与 `insert:` **谁赢**这一条尚未验证（判据里故意只降级成提醒、不判红）⇒ 对「入口重复登记」这类红，补完 `disabled: true` 后**那条红不会消失**（工具会如实报 `verified=0` / 退出码 2，并说明这不是"改动无效"）。要那类红消失得把重复的那份登记**删掉**；
+- **`--conflict-disable` 只对参与硬红的 id 生效**：提醒 / `unknown` 类**永不自动禁用**（那类判不出谁赢，禁了可能把好的那一半也禁掉）；
 - 日志归因**认得准但认得少**：作者本机语料上精确率高、**召回率偏低**，很多故障仍需人来读；
 - 一些边界没定论（例如同一 profile 里"哪个 patch 条目最终生效"在某些组合下静态判不出来，工具会**如实标 `unknown` 而不是猜**）；
 - 本仓库**不含**内部回归套件（语料 / 故障注入 / 沙箱），那部分与本机环境强耦合。

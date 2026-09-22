@@ -2098,28 +2098,116 @@ namespace BigFatFishRescuer
         /// <summary>纯函数：把补丁文本里某个 id 的 disabled 改成指定值。changed=false＝没动（已是目标状态或找不到）。</summary>
         public static string SetDisabledState(string patchText, string id, bool disabled, out bool changed)
         {
+            string note;
+            return SetDisabledState(patchText, id, disabled, out changed, out note);
+        }
+
+        /// <summary>
+        /// 纯函数（带说明版）。note 取值：
+        ///   already      已经是目标状态（无需改动）
+        ///   updated      改写了该条目**已有**的 disabled 行
+        ///   inserted     该条目**本来没有** disabled 行 ⇒ 新增了一行（只有"要禁用"才会走到）
+        ///   no-line-kept 要启用、但该条目本来就没有 disabled 行（本来就启用）⇒ 不动
+        ///   unparseable  disabled 行的值不是 true/false（看不懂 ⇒ 放弃，绝不猜）
+        ///   not-found    文本里没有这个 id 的登记行
+        ///
+        /// ★ 为什么必须多出这个 note（2026-09-22 由 --conflict-disable 的阳性夹具抓出来的真 bug）：
+        ///   旧版把「该条目根本没有 disabled 行可改」和「已经是 true」**都**塞进 changed=false，
+        ///   调用方只剩一句话可说 ⇒ 于是回一句「已经是 true ⇒ 无需改动」。
+        ///   而 insert 形态的条目（`- id: x` 下面直接跟 `name:`，没有 disabled 行）在本机真实
+        ///   profile 里 6 条 id 占 3 条 ⇒ **禁用动作静默不生效、还回一句假话**，
+        ///   连带影响「🩺 装后体检」的禁用按钮、--disableentry、以及 RepairPlan 的 disableentry。
+        ///   note 一拆开，"没做"和"不需要做"就再也混不到一起了。
+        /// </summary>
+        public static string SetDisabledState(string patchText, string id, bool disabled, out bool changed, out string note)
+        {
             changed = false;
+            note = "not-found";
             if (string.IsNullOrEmpty(patchText) || string.IsNullOrEmpty(id)) return patchText;
             var lines = new List<string>(patchText.Replace("\r\n", "\n").Split('\n'));
             for (int i = 0; i < lines.Count; i++)
             {
-                if (!Regex.IsMatch(lines[i], "^\\s*-\\s*id:\\s*" + Regex.Escape(id) + "\\s*$")) continue;
-                for (int j = i + 1; j < lines.Count && j <= i + 8; j++)
+                Match em = Regex.Match(lines[i], "^(\\s*)-\\s*id:\\s*" + Regex.Escape(id) + "\\s*$");
+                if (!em.Success) continue;
+                int entryIndent = em.Groups[1].Value.Length;
+
+                // 在这个条目的**块内**找 disabled 行：块止于"更浅缩进的 - 行"（下一条/下一块）。
+                // ★ 用"块边界"而不是旧版的"最多看 8 行" —— 条目可以带一长串 config: 子键，
+                //   8 行窗口会让 disabled 行落到窗外，于是又被误判成"没有 disabled 行"。
+                int dIdx = -1;
+                for (int j = i + 1; j < lines.Count; j++)
                 {
-                    string t = lines[j].Trim();
-                    if (t.Length == 0) continue;
-                    if (Regex.IsMatch(t, "^-\\s*id:")) break;            // 到下一个条目了
+                    string raw = lines[j];
+                    string t = raw.Trim();
+                    if (t.Length == 0 || t.StartsWith("#")) continue;
+                    int ind = raw.Length - raw.TrimStart().Length;
+                    if (t.StartsWith("-") && ind <= entryIndent) break;      // 到下一个条目/下一块了
                     if (!t.StartsWith("disabled:", StringComparison.Ordinal)) continue;
-                    Match m = Regex.Match(lines[j], "^(\\s*)disabled:\\s*(true|false)\\s*$");
-                    if (!m.Success) break;
-                    string want = disabled ? "true" : "false";
-                    if (m.Groups[2].Value == want) return patchText;      // 已经是目标状态
-                    lines[j] = m.Groups[1].Value + "disabled: " + want;
-                    changed = true;
+                    if (Regex.IsMatch(raw, "^\\s*disabled:\\s*(true|false)\\s*$")) dIdx = j;
+                    break;
+                }
+
+                string want = disabled ? "true" : "false";
+                if (dIdx >= 0)
+                {
+                    Match vm = Regex.Match(lines[dIdx], "^(\\s*)disabled:\\s*(true|false)\\s*$");
+                    if (vm.Groups[2].Value == want) { note = "already"; return patchText; }
+                    lines[dIdx] = vm.Groups[1].Value + "disabled: " + want;
+                    changed = true; note = "updated";
                     return string.Join("\r\n", lines.ToArray());
                 }
+
+                // 走到这里 = 这个条目**没有**（可解析的）disabled 行。
+                // ★ 必须先判"有一行 disabled: 但值不是 true/false"：
+                //   此时**绝不能**再插一行 —— 同一个映射里两个 disabled 键＝非法 YAML。
+                if (HasUnparseableDisabled(lines, i, entryIndent)) { note = "unparseable"; return patchText; }
+
+                if (!disabled) { note = "no-line-kept"; return patchText; }
+
+                string pad = new string(' ', entryIndent + 2);
+                lines.Insert(i + 1, pad + "disabled: true");
+                changed = true; note = "inserted";
+                return string.Join("\r\n", lines.ToArray());
             }
             return patchText;
+        }
+
+        /// <summary>该条目的块里是不是已经有一行 disabled:（只是值不是 true/false）——用于 fail-closed，避免插出重复键。</summary>
+        private static bool HasUnparseableDisabled(List<string> lines, int idIdx, int entryIndent)
+        {
+            for (int j = idIdx + 1; j < lines.Count; j++)
+            {
+                string raw = lines[j];
+                string t = raw.Trim();
+                if (t.Length == 0 || t.StartsWith("#")) continue;
+                int ind = raw.Length - raw.TrimStart().Length;
+                if (t.StartsWith("-") && ind <= entryIndent) return false;
+                if (t.StartsWith("disabled:", StringComparison.Ordinal)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>这条登记是不是写在 `- insert:` 块里面（insert 形态）。</summary>
+        public static bool EntryIsInInsertBlock(string patchText, string id)
+        {
+            if (string.IsNullOrEmpty(patchText) || string.IsNullOrEmpty(id)) return false;
+            string[] lines = patchText.Replace("\r\n", "\n").Split('\n');
+            int idIdx = -1, indentId = -1;
+            for (int i = 0; i < lines.Length; i++)
+            {
+                Match m = Regex.Match(lines[i], "^(\\s*)-\\s*id:\\s*" + Regex.Escape(id) + "\\s*$");
+                if (m.Success) { idIdx = i; indentId = m.Groups[1].Value.Length; break; }
+            }
+            if (idIdx < 0) return false;
+            for (int i = idIdx - 1; i >= 0; i--)
+            {
+                string raw = lines[i];
+                string t = raw.Trim();
+                if (t.Length == 0 || t.StartsWith("#")) continue;
+                int ind = raw.Length - raw.TrimStart().Length;
+                if (ind < indentId) return t.StartsWith("- insert:", StringComparison.Ordinal);
+            }
+            return false;
         }
 
         /// <summary>文件层：把某个条目启用/禁用（先快照、只改 disabled 行、改后验 YAML）。</summary>
@@ -2169,18 +2257,38 @@ namespace BigFatFishRescuer
             string text;
             try { text = File.ReadAllText(target); } catch (Exception e) { return "读取失败：" + e.Message; }
 
-            string snap;
-            try { snap = SafeConfig.Snapshot((disabled ? "禁用 " : "启用 ") + id); }
-            catch (Exception e) { return "**快照失败，已中止**：" + e.Message; }
-
             bool changed;
-            string updated = SetDisabledState(text, id, disabled, out changed);
+            string how;
+            string updated = SetDisabledState(text, id, disabled, out changed, out how);
             if (!changed)
-                return "「" + id + "」的 disabled 已经是 " + (disabled ? "true" : "false") + " ⇒ 无需改动。";
+            {
+                // ★ 2026-09-22 修：这里以前只剩一句「已经是 true ⇒ 无需改动」，
+                //   而 changed=false 其实有四种完全不同的原因。其中"该条目根本没有 disabled 行"
+                //   最危险 —— 它会让**禁用动作静默不生效却回报一切正常**（真实 profile 6 条 id 里 3 条是这形态）。
+                //   现在按 how 逐种说实话，"没做"与"不需要做"再也不会混在一起。
+                if (how == "already")
+                    return "「" + id + "」的 disabled 已经是 " + (disabled ? "true" : "false") + " ⇒ 无需改动。";
+                if (how == "no-line-kept")
+                    return "「" + id + "」本来就没有 disabled 行 ⇒ 本来**就是启用状态**，无需改动。\r\n"
+                         + "（这是真实结论，不是猜的：该条目下面没有 disabled 键。）";
+                if (how == "unparseable")
+                    return "「" + id + "」下面那行 disabled 的值**看不懂**（不是 true / false）⇒ **已放弃，文件未改动**。\r\n"
+                         + "（不替你猜：猜错会把一条合法登记改成非法。请先手工把那行改成 disabled: true 或 false 再重试。）";
+                return "在补丁文本里没有找到条目「" + id + "」的登记行 ⇒ **未改动任何文件**。";
+            }
 
             string yerr;
             if (!SafeConfig.YamlLooksLikeSequence(updated, out yerr))
                 return "改动后的 YAML 不像顶层序列 ⇒ **已放弃，文件未改动**：" + yerr;
+
+            // ★ 2026-09-22 挪位：快照从"读文件之后立刻"挪到"确认要写、且 YAML 合法之后"。
+            //   纪律没松（**写在快照之后**，这份新文本此刻还只在内存里），但换来一条可观测的不变量：
+            //   **有快照 ⇒ 一定有写动作**。旧顺序会给"本来就是 true"的空操作也留一份快照，
+            //   而主人的「♻ 恢复配置」是拿快照列表来挑回滚点的 —— 空操作快照会把那张表稀释掉。
+            //   （由 --conflict-disable 的阳性夹具测出来：第二次空跑又多了一份快照，count 1 → 2。）
+            string snap;
+            try { snap = SafeConfig.Snapshot((disabled ? "禁用 " : "启用 ") + id); }
+            catch (Exception e) { return "**快照失败，已中止**：" + e.Message; }
 
             try
             {
@@ -2193,10 +2301,17 @@ namespace BigFatFishRescuer
             }
 
             var sb = new StringBuilder();
-            sb.AppendLine("已" + (disabled ? "禁用" : "启用") + "条目「" + id + "」");
+            sb.AppendLine("已" + (disabled ? "禁用" : "启用") + "条目「" + id + "」" +
+                          (how == "inserted" ? "（该条目原本**没有** disabled 行 ⇒ 新增了一行）" : "（改写了已有的 disabled 行）"));
             sb.AppendLine("  文件：" + target);
             sb.AppendLine("  快照：" + snap + "（可用「♻ 恢复配置」回滚）");
             sb.AppendLine("  ★ 生效方式：patchReload 为 live 时**热生效**；若不确定，点一次「🚀 启动并打开」或重启服务。");
+            if (disabled && EntryIsInInsertBlock(text, id))
+            {
+                // ★ 形态提醒：这不是免责声明，是一条**已知未验证**的事实（见 ConflictRadar 的条目存废判据）。
+                sb.AppendLine("  ★ 形态提醒：这条登记写在 `- insert:` 块里 ⇒ **「给 insert 里的条目加 disabled」能不能压住它，本项目尚未验证**");
+                sb.AppendLine("    （冲突雷达对这一类**只降级成提醒、不判红**）。⇒ 改完别只看报告：用 --conflict 复扫并实测它是否真的没被加载。");
+            }
             return sb.ToString();
         }
 

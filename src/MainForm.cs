@@ -39,6 +39,8 @@ namespace BigFatFishRescuer
         private readonly Button _btnPostCheck;
         private readonly Button _btnCleanDangling;
         private readonly Button _btnDedup;
+        private readonly Button _btnConflict;      // 🧩 插件打架体检（只读冲突雷达）
+        private readonly Button _btnConflictOff;   // 🧩 关掉打架的那条（--conflict-disable 的按钮版）
         private readonly Button _btnReEnable;
         private readonly Button _btnReinstall;
         private readonly Button _btnLayer;
@@ -861,6 +863,70 @@ namespace BigFatFishRescuer
                 }, false);
             };
 
+            // ★★ 2026-09-22：冲突雷达（WP1~WP5）此前**只有命令行**，界面上一颗按钮都没有
+            //   ⇒ 主人问「你倒是把那个冲突雷达上去呀」。这里补上两颗：
+            //     ① 只读体检（一个字节都不写）② 关掉打架的那条（走 --conflict-disable 同一条通道）。
+            _btnConflict = MakeButton("🧩 插件打架体检", Color.FromArgb(70, 100, 120), 140);
+            _btnConflict.Click += delegate
+            {
+                RunAction("插件打架体检", delegate
+                {
+                    var sb = new System.Text.StringBuilder();
+                    try
+                    {
+                        ConflictRadar.ScanResult sc = ConflictRadar.Scan();
+                        System.Collections.Generic.List<ConflictRadar.Conflict> cf = ConflictRadar.Judge(sc.All);
+                        sb.Append(ConflictRadar.Render(sc.All, cf, sc));
+                        sb.AppendLine();
+                        sb.AppendLine("（本次只扫描、**一个字节都没写**。要处置就点「🧩 关掉打架的那条」。）");
+                    }
+                    catch (Exception ex) { sb.AppendLine("扫描异常：" + ex.GetType().Name + "：" + ex.Message); }
+                    return sb.ToString();
+                }, false);
+            };
+
+            _btnConflictOff = MakeButton("🧩 关掉打架的那条", Color.FromArgb(140, 80, 40), 150);
+            _btnConflictOff.Click += delegate
+            {
+                RunAction("关掉打架的那条", delegate
+                {
+                    var sb = new System.Text.StringBuilder();
+                    string list;
+                    try { list = ConflictFix.ListCandidates(); }
+                    catch (Exception ex) { return "扫描异常：" + ex.GetType().Name + "：" + ex.Message; }
+                    sb.Append(list);
+                    string id = Prompt("关掉打架的那条",
+                        "输入要**禁用**的条目 id（上面的报告里「该红里出现过的 id」那一行列的就是）：\r\n" +
+                        "留空则什么都不做。\r\n\r\n" +
+                        "纪律：只有**参与硬红**的 id 才会被执行；不在硬红里的 id 会被直接拒绝、一个字节都不写。");
+                    if (string.IsNullOrWhiteSpace(id))
+                    {
+                        sb.AppendLine("（未输入 id，未改动任何文件。）");
+                        return sb.ToString();
+                    }
+                    id = id.Trim();
+                    if (!Confirm("禁用条目「" + id + "」？",
+                                 "会给这条登记补上 `disabled: true`（只改 1 个文件：cordis.patch.yml）。\r\n\r\n" +
+                                 "· 动手前先打快照（可用「♻ 恢复配置」回滚）\r\n" +
+                                 "· 改完**重扫一次雷达**复验；复验不过**不会自动回滚**，只如实报告\r\n" +
+                                 "· 若该 id 没有参与任何硬红 ⇒ **拒绝执行，一个字节都不写**"))
+                    {
+                        sb.AppendLine("（已取消，未改动任何文件。）");
+                        return sb.ToString();
+                    }
+                    int rc = 0;
+                    string rep;
+                    try { rep = ConflictFix.Disable(id, out rc); }
+                    catch (Exception ex) { rep = "执行异常：" + ex.GetType().Name + "：" + ex.Message; }
+                    sb.Append(rep);
+                    sb.AppendLine();
+                    if (rc == 0) sb.AppendLine("（退出码 0 = 改动成功且复验通过。）");
+                    else if (rc == 1) sb.AppendLine("（退出码 1 = **没有发生写动作**：要么这个 id 没参与硬红、要么本来就已经是禁用的。上面那句就是原因。）");
+                    else if (rc == 2) sb.AppendLine("（退出码 2 = 文件已改好，但雷达上那条红还在 ⇒ 按报告里的「已知边界 / 回滚办法」处理。）");
+                    return sb.ToString();
+                }, false);
+            };
+
             _btnReEnable = MakeButton("♻ 启用被禁条目", Color.FromArgb(60, 120, 70), 140);
             _btnReEnable.Click += delegate
             {
@@ -982,6 +1048,11 @@ namespace BigFatFishRescuer
                 MakeGroup("先看这个", new Button[] { _btnPostCheck, _btnDiag }),
                 MakeGroup("细查与取证", new Button[] { _btnBootCheck, _btnLog, _btnExport, _btnDiagnose })));
             tabs.TabPages.Add(MakeTab("🧩 插件与皮肤",
+                // ★★ 2026-09-22：冲突雷达放在**这一页的第一组**。理由不是美观：
+                //   --shot 自截图的实测证据摆在眼前 —— 这一页的组已经多到要**滚动**才能看全，
+                //   我第一次把这两颗按钮加在「可逆修复」下面 ⇒ 截图里根本看不见（在折叠线以下）。
+                //   主人要的是"把冲突雷达放上来"，放在看不见的地方等于没做。
+                MakeGroup("插件打架（先体检，再关掉打架的那条）", new Button[] { _btnConflict, _btnConflictOff }),
                 MakeGroup("外观与皮肤（换皮肤 / 修互斥）", new Button[] { _btnSkin, _btnFixSkin }),
                 MakeGroup("体检与修复", new Button[] { _btnCompat, _btnFixPlugin }),
                 // ★★ 2026-09-20 修：这个按钮**建出来了却从没放进任何页面** ⇒
@@ -1897,7 +1968,7 @@ namespace BigFatFishRescuer
             //   别的动作正在跑（例如"停止服务"正在杀进程）时，用户仍能点「导出诊断包」，
             //   起第二个进程实例 + 并发弹出资源管理器。
             //   （机器核对：本文件 MakeButton 赋值定义 27 个按钮字段，此处数组 26 个，差集恰为它。）
-            foreach (var b in new Control[] { _btnStartOpen, _btnScout, _btnOpen, _btnRestart, _btnStop, _btnClose, _btnDiag, _btnWhy, _btnBootCheck, _btnPatch, _btnPopup, _btnTerminal, _btnRepair, _btnForce, _btnPostCheck, _btnCleanDangling, _btnDedup, _btnReEnable, _btnReinstall, _btnLayer, _btnPatchLock, _btnLockFix, _btnWhite, _btnPathAudit, _btnHealBoundary, _btnSkin, _btnCompat, _btnFixPlugin, _btnCrash, _btnDisableCrash, _btnFixSkin, _btnLog, _btnExport, _btnRefresh, _btnStartup, _btnDiagnose, _btnVault, _btnVaultList, _btnVaultRestore, _btnConfigCheck })
+            foreach (var b in new Control[] { _btnStartOpen, _btnScout, _btnOpen, _btnRestart, _btnStop, _btnClose, _btnDiag, _btnWhy, _btnBootCheck, _btnPatch, _btnPopup, _btnTerminal, _btnRepair, _btnForce, _btnPostCheck, _btnCleanDangling, _btnDedup, _btnConflict, _btnConflictOff, _btnReEnable, _btnReinstall, _btnLayer, _btnPatchLock, _btnLockFix, _btnWhite, _btnPathAudit, _btnHealBoundary, _btnSkin, _btnCompat, _btnFixPlugin, _btnCrash, _btnDisableCrash, _btnFixSkin, _btnLog, _btnExport, _btnRefresh, _btnStartup, _btnDiagnose, _btnVault, _btnVaultList, _btnVaultRestore, _btnConfigCheck })
             {
                 if (b != null) b.Enabled = enabled;
             }

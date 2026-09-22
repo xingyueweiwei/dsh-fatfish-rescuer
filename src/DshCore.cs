@@ -58,7 +58,7 @@ namespace BigFatFishRescuer
         //   ★ 2026-09-20 晚 主人拍板：热修版叫 **v5.0.1** —— 修的是"点了启动却说没起来"
         //     的**误报**（旧日志块被当成本次失败原因，见 StartFailJudge 的注释与
         //     v5\faults\e2e_stale_log_falsefail.ps1）。
-        public const string AppVersion = "5.0.2";
+        public const string AppVersion = "5.0.3";
         public static string AppTitle { get { return AppName + " v" + AppVersion; } }
 
         private static int _activePortCache = -1;

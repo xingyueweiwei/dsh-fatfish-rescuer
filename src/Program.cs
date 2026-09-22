@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -31,8 +31,8 @@ namespace BigFatFishRescuer
             //   同时保留 OutputEncoding 赋值（对真控制台场景让 chcp 也跟上）。
             //   ★★ v5（WP5 复核第二轮）修：上面只换了 **stdout**，stderr 漏了。
             //   实测（WP5 量测）：`--headless --classify-only` 的 stdout 是 UTF-8，
-            //   但 stderr 那行 `REPORT_FILE=C:\Users\<USER>\...` 是 **GBK 字节**
-            //   （raw = `C:/Users/\xc7\xe0\xde\xb1/...`，按 UTF-8 解码直接抛异常）。
+            //   但 stderr 那行 `REPORT_FILE=C:\Users\<中文用户名>\...` 是 **GBK 字节**
+            //   （用户名那几个汉字按 GBK 编码，按 UTF-8 解码直接抛异常）。
             //   后果：`2>&1` 合并后 / 在 Linux 上读 stderr 全是乱码 —— 而 WP5 的验收
             //   就是「输出一致结论、可逐字比对」，stderr 不一致会直接毁掉这条。
             //   对称地换掉 Console.Error（对重定向场景必然生效）。
@@ -193,6 +193,23 @@ namespace BigFatFishRescuer
                 string rep = ConflictRadar.SelfTest() + ConflictRadarHosts.SelfTest2() + ConflictRadarStatic.SelfTest3();
                 Console.WriteLine(rep);
                 return rep.IndexOf("[FAIL]", StringComparison.Ordinal) >= 0 ? 1 : 0;
+            }
+            // ★ WP4 第一条写动作：`--conflict-disable <id>`（禁用冲突条目）
+            //   纪律：① 不带 id ⇒ 只列候选、一个字节不写；② id 没参与硬红 ⇒ 拒绝执行、一个字节不写；
+            //         ③ 动手前打印「会动的 / 不动的」；④ 动完重扫雷达真复验；
+            //         ⑤ 复验不过**不自动回滚**（文件可能合法只是没热生效）⇒ 报告 + 快照路径 + 回滚建议。
+            //   退出码：0=成功且复验通过 / 1=拒绝或未改动 / 2=复验未通过（已改但雷达仍红）。
+            if (args != null && args.Length > 0 && args[0] == "--conflict-disable")
+            {
+                if (args.Length < 2)
+                {
+                    Console.WriteLine(ConflictFix.ListCandidates());
+                    return 0;
+                }
+                int _cdisExit = 0;
+                string _cdisRep = ConflictFix.Disable(args[1], out _cdisExit);
+                Console.WriteLine(_cdisRep);
+                return _cdisExit;
             }
 
             // ★ 2026-09-18 新增：`--start` —— 命令行启动 dsh web 并**等它真的能响应**（无窗口，便于验证/排障）
@@ -492,7 +509,17 @@ namespace BigFatFishRescuer
             {
                 DshCore.EnsureAppDataDir();
                 string res;
-                try { res = PluginDiag.SetEntryDisabled(args[1], args[0] == "--enableentry"); }
+                // ★★ 2026-09-22 修真 bug：这里原本写的是 `args[0] == "--enableentry"`，
+                //   而 SetEntryDisabled 的第二个参数是 **disabled**（true＝禁用）—— 也就是说
+                //   `--disableentry` 实际在**启用**、`--enableentry` 实际在**禁用**，两个开关**正好对调**。
+                //   危害实例：想临时摘掉出问题的插件（--disableentry whale-desktop-launcher）会把它
+                //   的 `disabled: true` 改成 false，等于**亲手把那个会拖垮 DSH 的 launcher 打开**。
+                //   抓到它的过程：--conflict-disable 的阳性夹具里 `--disableentry bff-ins` 的写盘结果
+                //   与 `--enableentry` 相反（一个字节都没按预期改）。
+                //   其它两条同功能路径本来就是对的（UI 的「启用被禁条目」传 false、RepairPlan 的
+                //   disableentry 传 true）—— 只有这条命令行线接反了，所以一直没被发现。
+                bool wantDisabled = (args[0] == "--disableentry");
+                try { res = PluginDiag.SetEntryDisabled(args[1], wantDisabled); }
                 catch (Exception e) { res = "执行异常：" + e.GetType().Name + ": " + e.Message; }
                 Console.Out.WriteLine(res);
                 return 0;
