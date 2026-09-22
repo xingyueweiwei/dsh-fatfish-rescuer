@@ -12,8 +12,8 @@
 
 **① 一键下载（文件就在本仓库里，点完直接开始下）**
 
-👉 **[点这里下载便携版 zip](https://github.com/xingyueweiwei/dsh-fatfish-rescuer/raw/main/download/BigFatFishRescuer_v5.0.3_portable.zip)** —— 2,124,172 字节
-sha256：`8914A8EF441308E7A472BE76060016EBE9CB167B31185D471A9B9FF1F54BD9F4`
+👉 **[点这里下载便携版 zip](https://github.com/xingyueweiwei/dsh-fatfish-rescuer/raw/main/download/BigFatFishRescuer_v5.0.3_portable.zip)** —— 2,124,190 字节
+sha256：`3B69C9640732C4CCCD334CEF91E6049FAEF4788919BD954156A792FE7946993A`
 
 **② 或者去 [Releases 页](https://github.com/xingyueweiwei/dsh-fatfish-rescuer/releases)**（版本更新走那边）
 

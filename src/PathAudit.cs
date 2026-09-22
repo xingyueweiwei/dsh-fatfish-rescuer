@@ -14,9 +14,14 @@ namespace BigFatFishRescuer
     //    主人问：是不是有人就是被中文用户名坑的？——下面是**本机取得的证据**，
     //    不是推测：
     //      · **DSH 本体是安全的**：它把非 ASCII 工作区名转义成 ASCII 目录名
-    //        （实测 ~/.dsh/sessions 下是 `--C-Users-~6D4B~8BD5~7528~6237-Desktop-~9879~76EE--`，
-    //         即每个非 ASCII 字符写成 `~码点十六进制`：6D4B=测、8587=薇、7814=研、7A76=究、
-    //         5927=大、80A5=肥、9C7C=鱼 ⇒ 反解出来正是那个中文工作区路径）。
+    //        （形状是 `--C-Users-<转义后的用户名>-Desktop-<转义后的工作区名>--`，
+    //         每个非 ASCII 字符写成 `~码点十六进制`：6D4B=测、8BD5=试、7528=用、6237=户、
+    //         5927=大、80A5=肥、9C7C=鱼 ⇒ 反解出来就是那个中文工作区路径）。
+    //        ★★ 2026-09-22 注意：这里的样例**故意用脱敏后的假名**，不写真名 ——
+    //           这段注释与下面的 `Selftest()` 都会被编进**公开仓库与分发的 exe**，
+    //           写真的用户名＝把一个可反解的 Windows 用户名一起发出去（实测 exe 里能搜到
+    //           那串转义路径，任何人都能按本文件自己写明的规则解回中文）。
+    //           真名与真实路径的原始证据留在工程的证据文档里，源码这边一律用假名。
     //      · **被坑的是周边工具链**（本机都真踩过）：
     //          ⒜ Windows 上 Python 的 stdio 默认是 GBK（实测本机 Python 3.12
     //             输出 `sys.filesystemencoding=utf-8` 但 `sys.stdout.encoding=gbk`）
@@ -180,7 +185,7 @@ namespace BigFatFishRescuer
 
         /// <summary>
         /// 这个字符会不会触发「目录选择器截断」bug：**UTF-16 低字节为 0x00**（码点末两位是 00）。
-        /// 例：「一」U+4E00、「开」U+5F00 会触发；「青」U+9752、「薇」U+8587、「研」U+7814 不会。
+        /// 例：「一」U+4E00、「开」U+5F00 会触发；「测」U+6D4B、「试」U+8BD5、「项」U+9879 不会。
         /// （来源：DSH 讨论 #4648，社区已核到源码行。）
         /// </summary>
         public static bool IsPickerDangerChar(char c)
@@ -414,11 +419,18 @@ namespace BigFatFishRescuer
         {
             var res = new List<string>();
 
-            // 转义反解：正样本（本机真实目录名）必须还原出中文
-            string real = "--C-Users-~6D4B~8BD5~7528~6237-Desktop-~9879~76EE--";
-            string back = UnescapeDshDir(real);
-            res.Add("中文转义反解 正样本（~6D4B→测）: " + (back.IndexOf('测') >= 0 && back.IndexOf('户') >= 0 ? "OK" : "FAIL"));
-            res.Add("中文转义反解 鱼字（~9C7C）: " + (back.IndexOf('鱼') >= 0 ? "OK" : "FAIL"));
+            // 转义反解：正样本必须还原出中文。
+            // ★★ 2026-09-22 改：样例原来写的是**本机真实目录名**，于是这段字符串连同
+            //   「~9752→青」这样的标签一起被编进**分发的 exe** —— 任何人都能照本文件写明的
+            //   规则把它解回中文用户名与工作区名（实测在 exe 里搜得到那串转义路径）。
+            //   现在样例改成脱敏假名（测试用户 / 大肥鱼），且两个断言都**自带输入**，
+            //   不再依赖样例里恰好有哪些字 —— 判据不该依赖证据数据（否则公开仓库那份
+            //   脱敏过的副本会把这条判据弄红：实测别人从仓库构建出来的 exe 跑 --selftest 是 96/1）。
+            string demoEsc = "--C-Users-~6D4B~8BD5~7528~6237-Desktop-~5927~80A5~9C7C--";
+            string back = UnescapeDshDir(demoEsc);
+            res.Add("中文转义反解 正样本（~6D4B→测）: " + (back.IndexOf('测') >= 0 && back.IndexOf('试') >= 0 ? "OK" : "FAIL"));
+            // 自带输入的独立样本（不依赖上面那串里碰巧有 鱼）
+            res.Add("中文转义反解 鱼字（~9C7C）: " + (UnescapeDshDir("--C-Users-~9C7C--").IndexOf('鱼') >= 0 ? "OK" : "FAIL"));
             // 负样本：没有 ~ 的纯 ASCII 不能被改动
             res.Add("中文转义反解 负样本（纯ASCII不变）: " + (UnescapeDshDir("--C-Users-abc--") == "--C-Users-abc--" ? "OK" : "FAIL"));
             // 畸形输入不能抛
@@ -431,7 +443,7 @@ namespace BigFatFishRescuer
             res.Add("非ASCII判定 空串: " + (!HasNonAscii("") ? "OK" : "FAIL"));
 
             // 会话目录名 ASCII 安全判定
-            res.Add("目录名ASCII判定 正样本（转义后）: " + (IsAsciiSafe(real) ? "OK" : "FAIL"));
+            res.Add("目录名ASCII判定 正样本（转义后）: " + (IsAsciiSafe(demoEsc) ? "OK" : "FAIL"));
             res.Add("目录名ASCII判定 负样本（含中文）: " + (!IsAsciiSafe("示例目录") ? "OK" : "FAIL"));
             res.Add("目录名ASCII判定 空串: " + (!IsAsciiSafe("") ? "OK" : "FAIL"));
 
@@ -466,10 +478,10 @@ namespace BigFatFishRescuer
             res.Add("根因判据 负样本（无关文本）: "
                 + (!LooksLikePluginTreeCause("[OK] 重复条目：会真崩的 0 个；跨层同 id 2 个（分层覆盖，合法）") ? "OK" : "FAIL"));
 
-            // 目录选择器陷阱：正样本（U+4E00「一」/U+5F00「开」）必须命中；负样本（青/薇/研）必须不命中
+            // 目录选择器陷阱：正样本（U+4E00「一」/U+5F00「开」）必须命中；负样本（测/鱼：低字节非 0）必须不命中
             res.Add("选择器陷阱 正样本（一 U+4E00）: " + (IsPickerDangerChar('一') ? "OK" : "FAIL"));
             res.Add("选择器陷阱 正样本（开 U+5F00）: " + (IsPickerDangerChar('开') ? "OK" : "FAIL"));
-            res.Add("选择器陷阱 负样本（青 U+9752）: " + (!IsPickerDangerChar('青') ? "OK" : "FAIL"));
+            res.Add("选择器陷阱 负样本（测 U+6D4B）: " + (!IsPickerDangerChar('测') ? "OK" : "FAIL"));
             res.Add("选择器陷阱 负样本（鱼 U+9C7C）: " + (!IsPickerDangerChar('鱼') ? "OK" : "FAIL"));
             res.Add("选择器陷阱 负样本（ASCII a）: " + (!IsPickerDangerChar('a') ? "OK" : "FAIL"));
             var sink = new List<string>();
