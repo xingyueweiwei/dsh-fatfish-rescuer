@@ -1,0 +1,48 @@
+name: build-and-selfcheck
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# 设计说明（别把下面这两个"仅供参考"的步骤改成判红）：
+#   项目的判据分两类 ——
+#   ① 环境无关：编译、以及 tools/killtree_judge.ps1（它自己造替身进程树，不需要 DSH）
+#      ⇒ 这两步**判红**，是真正的门槛；
+#   ② 依赖本机装了 DSH：--conflict-selftest 里有两条"防漏扫"判据
+#      （装载集闭包非空、真实 profile 必须扫到注入声明与第三层 patch）——
+#      在**没有装 DSH 的 runner 上必然报红**（实测 29 OK / 2 FAIL），
+#      那是"环境缺失"而不是"代码退化" ⇒ 只打印结论、**不判红**。
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 编译（只用 Windows 自带 csc，零依赖）
+        shell: pwsh
+        run: |
+          # 工具自己的 home 指到临时目录：CI 上不碰 runner 的真实 .dsh
+          $env:BFF_DSH_HOME = Join-Path $env:RUNNER_TEMP 'bff-ci-home'
+          New-Item -ItemType Directory -Force -Path $env:BFF_DSH_HOME | Out-Null
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
+          if ($LASTEXITCODE -ne 0) { throw "build 失败（exit $LASTEXITCODE）" }
+          $exe = Get-Item .\BigFatFishRescuer.exe
+          Write-Host ("exe = " + $exe.Length + " 字节 / FileVersion=" + $exe.VersionInfo.FileVersion)
+          if ($exe.Length -lt 500KB) { throw "exe 只有 $([int]($exe.Length/1KB)) KB —— 很可能没带上嵌入资源" }
+
+      - name: 进程树判据（环境无关，判红）
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\killtree_judge.ps1
+          if ($LASTEXITCODE -ne 0) { throw "killtree_judge 报红（exit $LASTEXITCODE）" }
+
+      - name: 冲突判据（依赖本机 DSH，仅供参考，不判红）
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Write-Host "※ runner 上没有装 DSH ⇒ S8/S11 两条「防漏扫」判据会如期报红，属环境缺失。"
+          $env:BFF_DSH_HOME = Join-Path $env:RUNNER_TEMP 'bff-ci-home'
+          & .\BigFatFishRescuer.exe --conflict-selftest
+          Write-Host ("--conflict-selftest exit = " + $LASTEXITCODE)

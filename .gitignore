@@ -1,0 +1,23 @@
+# 构建产物（不进仓库）
+BigFatFishRescuer.exe
+tools/MakeVersionRes.exe
+src/version.res
+
+# 运行产物 / 报告（可能含本机绝对路径，一律不入库）
+*.log
+*.out.txt
+*.err.txt
+_regsandbox/
+_回归报告/
+_冲突实验报告/
+dist/
+_归档/
+_备份_*/
+__pycache__/
+*.pyc
+
+# 备份与临时
+*.bak
+*.bak-*
+*.prev-*
+*~
