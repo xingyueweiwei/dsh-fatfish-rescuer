@@ -761,6 +761,19 @@ namespace BigFatFishRescuer
                 for (int ai = 0; ai < args.Length; ai++)
                     if (args[ai] == "--nativeframe") { SkinFrame.Disable("命令行 --nativeframe"); break; }
 
+            // ★★ 2026-09-23：`--all-dsh` —— **显式授权「动全机所有 dsh」**。
+            //   背景（2026-09-22 事故）：范围收窄在「这个端口上没匹配到 dsh」时会**回退全机**，
+            //   而故障注入场景 F2 故意让端口上只有非 dsh 程序 ⇒ 回退把主人正在用的实例列进名单并真的停了它。
+            //   现在默认**收窄失败即拒绝动手**（fail-closed）；确实要动全机时必须显式说出口。
+            if (args != null)
+                for (int ai = 0; ai < args.Length; ai++)
+                    if (args[ai] == "--all-dsh")
+                    {
+                        DshCore.AllowMachineWideKill = true;
+                        Console.WriteLine("★ 已显式授权：收窄失败时允许回退为全机 dsh 扫描（--all-dsh）。");
+                        break;
+                    }
+
             // 仅供自检/截图：--tab N 启动时选中第 N 个页签（0 起）
             if (args != null && args.Length >= 2 && args[0] == "--tab")
             {

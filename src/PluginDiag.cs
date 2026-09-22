@@ -2587,19 +2587,35 @@ namespace BigFatFishRescuer
             {
                 string dp, dm;
                 List<ProviderInfo> ps = ReadProviders(out dp, out dm);
-                int badP = 0;
+                int badP = 0, retried = 0;
+                var badNames = new List<string>();
                 foreach (ProviderInfo p in ps)
                 {
-                    if (string.IsNullOrEmpty(p.BaseUrl)) { badP++; continue; }
+                    if (string.IsNullOrEmpty(p.BaseUrl)) { badP++; badNames.Add(p.Name + "(缺 BaseUrl)"); continue; }
                     Match m = Regex.Match(p.BaseUrl, @"^https?://([^/:]+)(?::(\d+))?");
-                    if (!m.Success) { badP++; continue; }
+                    if (!m.Success) { badP++; badNames.Add(p.Name + "(BaseUrl 不成形)"); continue; }
                     bool https = p.BaseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
                     int port = m.Groups[2].Success ? int.Parse(m.Groups[2].Value) : (https ? 443 : 80);
-                    long ms; string err;
-                    if (!TryTcp(m.Groups[1].Value, port, 5000, out ms, out err)) badP++;
+
+                    // ★★ 2026-09-23 修（自身就是本项目 2026-09-20 那条铁律的落实）：
+                    //   **探活超时 ≠ 端点死了**。原来只探**一次**（5 秒），一次超时就判这一项红 ——
+                    //   实测同一天里这条判据在 1 个 / 0 个之间**随机飘**（第一次 --selftest 报
+                    //   「不可达/缺端点 1 个」失败，紧接着再跑就是 0 个通过）。
+                    //   一个会飘的红，比没有这条判据更糟：它教人忽略红色。
+                    //   ⇒ 改成**最多 3 次、间隔 0.4 秒，任意一次通就算通**；并在文案里写明探了几次。
+                    bool okOne = false; long msLast = 0; string errLast = "";
+                    for (int attempt = 1; attempt <= 3 && !okOne; attempt++)
+                    {
+                        if (attempt > 1) { retried++; try { System.Threading.Thread.Sleep(400); } catch { } }
+                        okOne = TryTcp(m.Groups[1].Value, port, 5000, out msLast, out errLast);
+                    }
+                    if (!okOne) { badP++; badNames.Add(p.Name + "(" + m.Groups[1].Value + ":" + port + " " + (errLast ?? "") + ")"); }
                 }
                 items.Add(new string[] { badP == 0 ? "1" : "0",
-                    "模型通路：自定义 provider " + ps.Count + " 个 ⇒ 不可达/缺端点 " + badP + " 个；默认模型 " + (dm ?? "?") });
+                    "模型通路：自定义 provider " + ps.Count + " 个 ⇒ 不可达/缺端点 " + badP + " 个"
+                    + (badP > 0 ? "（" + string.Join("、", badNames.ToArray()) + "；每个端点最多探 3 次、任一次通即算通）"
+                                : "（每个端点最多探 3 次、任一次通即算通；本次重试 " + retried + " 次）")
+                    + "；默认模型 " + (dm ?? "?") });
             }
             catch (Exception e) { items.Add(new string[] { "0", "模型通路检查异常：" + e.Message }); }
 

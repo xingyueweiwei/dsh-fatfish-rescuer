@@ -12,13 +12,13 @@
 
 **① 一键下载（GitHub Release，最标准的那条路）**
 
-👉 **[点这里直接下载 BigFatFishRescuer_v5.0.3_portable.zip](https://github.com/xingyueweiwei/dsh-fatfish-rescuer/releases/download/v5.0.3/BigFatFishRescuer_v5.0.3_portable.zip)** —— 2,124,190 字节
-sha256：`3B69C9640732C4CCCD334CEF91E6049FAEF4788919BD954156A792FE7946993A`
+👉 **[点这里直接下载 BigFatFishRescuer_v5.0.4_portable.zip](https://github.com/xingyueweiwei/dsh-fatfish-rescuer/releases/download/v5.0.4/BigFatFishRescuer_v5.0.4_portable.zip)** —— 2,126,600 字节
+sha256：`AFEF4B054DD3A6383EE0A6D7F8657A4E5921CE1E04A4CE508FAF3D8DADE76055`
 （历史版本都在 [Releases 页](https://github.com/xingyueweiwei/dsh-fatfish-rescuer/releases)）
 
 **② 或者从仓库内直接下（同一个文件，备用镜像）**
 
-👉 **[仓库内直链](https://github.com/xingyueweiwei/dsh-fatfish-rescuer/raw/main/download/BigFatFishRescuer_v5.0.3_portable.zip)** —— 同 size / 同 sha256
+👉 **[仓库内直链](https://github.com/xingyueweiwei/dsh-fatfish-rescuer/raw/main/download/BigFatFishRescuer_v5.0.4_portable.zip)** —— 同 size / 同 sha256
 
 > 两条路拿到的是**同一个文件**（sha256 已实测一致）。Release 那条多带版本列表与下载计数；
 > 仓库内那条的好处是**克隆仓库本身就带着包**，不依赖 Releases 服务。
@@ -126,6 +126,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1   # 只用 Windows
 
 ## 已知短板（别当成做完了）
 
+- **「停服务」默认只在能认出端口时动手**：按 `--port X` 一个 dsh 都没匹配到时，**默认拒绝执行**（不再回退全机）——
+  见下面「它会动什么、不会动什么」。代价是：如果你的 dsh 是**不带 `--port`** 起的，界面上的「停止服务」会拒绝并提示你，
+  需要显式授权（`--all-dsh` 或环境变量 `BFF_ALLOW_MACHINE_WIDE_KILL=1`）才会动全机。**这是刻意的**：宁可不动，也不误杀别人的会话；
 - **冲突雷达的复验尺子量不出"禁用型"改动**：`disabled:` 与 `insert:` **谁赢**这一条尚未验证（判据里故意只降级成提醒、不判红）⇒ 对「入口重复登记」这类红，补完 `disabled: true` 后**那条红不会消失**（工具会如实报 `verified=0` / 退出码 2，并说明这不是"改动无效"）。要那类红消失得把重复的那份登记**删掉**；
 - **`--conflict-disable` 只对参与硬红的 id 生效**：提醒 / `unknown` 类**永不自动禁用**（那类判不出谁赢，禁了可能把好的那一半也禁掉）；
 - 日志归因**认得准但认得少**：作者本机语料上精确率高、**召回率偏低**，很多故障仍需人来读；

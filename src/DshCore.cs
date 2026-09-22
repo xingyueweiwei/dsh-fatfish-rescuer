@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -58,7 +58,7 @@ namespace BigFatFishRescuer
         //   ★ 2026-09-20 晚 主人拍板：热修版叫 **v5.0.1** —— 修的是"点了启动却说没起来"
         //     的**误报**（旧日志块被当成本次失败原因，见 StartFailJudge 的注释与
         //     v5\faults\e2e_stale_log_falsefail.ps1）。
-        public const string AppVersion = "5.0.3";
+        public const string AppVersion = "5.0.4";
         public static string AppTitle { get { return AppName + " v" + AppVersion; } }
 
         private static int _activePortCache = -1;
@@ -1635,10 +1635,36 @@ namespace BigFatFishRescuer
         //   （见 ScopeNote / KillScopeSummary），不再默默扩大范围。
         private static string _lastScopeNote = "";
 
+        /// <summary>本次收窄是否**因为"端口上一个 dsh 都没匹配到"而拒绝回退全机**（供判据与报告用）。</summary>
+        private static bool _lastRefusedFallback = false;
+        /// <summary>本次有多少个 dsh 的命令行**匹配上了当前端口**（供判据用；0 且非空机 ⇒ 收窄失败）。</summary>
+        private static int _lastMatchedOnPort = 0;
+        /// <summary>机器上一共有几个 dsh（供机器行报告"回退会波及多少"；**不是**返回的清单长度）。</summary>
+        private static int _lastAllDshCount = 0;
+
+        /// <summary>
+        /// ★★ 2026-09-23：**"动全机 dsh" 必须显式授权**（默认 false）。
+        ///
+        /// 事故（2026-09-22，我造成的）：故障注入场景 F2 的设计是「端口被**非 dsh** 程序占着」，
+        /// 所以它故意**没有**沙箱 dsh ⇒ 工具按 `--port 4381` 一个都没匹配到 ⇒ 触发下面那条
+        /// 「回退为全机 dsh 扫描」⇒ 名单里正好是**主人正在使用的实例**，而且 F2 接着**真的执行了 stop**
+        /// ⇒ 那个实例被杀（它同时是承载测试进程的宿主）⇒ 回归断在半路、报告一个字节都没写出来。
+        ///
+        /// 规矩：**"没找到目标"绝不等于"目标是全体"**。凡"收窄失败就放宽到全体"的默认行为都是定时炸弹；
+        /// 正解＝收窄失败就**拒绝动手**（fail-closed），要动全体必须**显式说出口**：
+        /// 命令行 `--all-dsh`，或环境变量 `BFF_ALLOW_MACHINE_WIDE_KILL=1`。
+        /// </summary>
+        public static bool AllowMachineWideKill =
+            (Environment.GetEnvironmentVariable("BFF_ALLOW_MACHINE_WIDE_KILL") == "1");
+
         public static int[] GetDshPidsForKill()
         {
+            _lastRefusedFallback = false;
+            _lastMatchedOnPort = 0;
+            _lastAllDshCount = 0;
             int[] all = GetDshPids();
             if (all == null || all.Length == 0) { _lastScopeNote = ""; return new int[0]; }
+            _lastAllDshCount = all.Length;
 
             var onPort = new List<int>();
             var others = new List<int>();
@@ -1654,6 +1680,7 @@ namespace BigFatFishRescuer
                 if (c == null) { try { c = QueryCmdLine(pid); } catch { } }
                 if (CmdMatchesPort(c, ActivePort)) onPort.Add(pid); else others.Add(pid);
             }
+            _lastMatchedOnPort = onPort.Count;
 
             string tag = HasExplicitScopeOverride() ? "（沙箱/显式覆盖模式）" : "";
             if (onPort.Count > 0)
@@ -1667,9 +1694,23 @@ namespace BigFatFishRescuer
                 return onPort.ToArray();
             }
 
+            // ★★ 收窄失败：默认**拒绝动手**（除非有人显式授权动全机）
+            if (!AllowMachineWideKill)
+            {
+                _lastRefusedFallback = true;
+                _lastScopeNote = "★ 按 `--port " + ActivePort.ToString(CultureInfo.InvariantCulture)
+                    + "` 没有匹配到 dsh 进程 ⇒ **默认拒绝动手：本次不会结束任何进程**。\r\n"
+                    + "   为什么：" + (others.Count > 0 || all.Length > 0
+                        ? "机器上确实有 " + all.Length + " 个 dsh 进程，但「这个端口上没找到」**不等于**「所有 dsh 都该停」"
+                        : "机器上目前没有 dsh 进程")
+                    + " —— 别的实例可能正承载着别人的会话。\r\n"
+                    + "   ★ 确实要停止机器上**全部** dsh 的话，请显式授权：命令行加 `--all-dsh`，"
+                    + "或设环境变量 BFF_ALLOW_MACHINE_WIDE_KILL=1（界面上的「停止服务」同理）。\r\n";
+                return new int[0];
+            }
+
             _lastScopeNote = "★ 按 `--port " + ActivePort.ToString(CultureInfo.InvariantCulture)
-                + "` 没有匹配到 dsh 进程（实例可能是**不带 --port** 起的，或读不到命令行）"
-                + " ⇒ 本次**回退为全机 dsh 扫描**，共 " + all.Length
+                + "` 没有匹配到 dsh 进程 ⇒ **已显式授权全机**，本次回退为全机 dsh 扫描，共 " + all.Length
                 + " 个：下面清单里的进程**都会**被结束，请先确认里面没有你要保留的实例。\r\n";
             return all;
         }
@@ -1688,7 +1729,11 @@ namespace BigFatFishRescuer
             try
             {
                 int[] pids = GetDshPidsForKill();
-                if (pids == null || pids.Length == 0) return "本次范围内没有找到运行中的 dsh 进程（不会结束任何东西）。";
+                // ★ 2026-09-23：空清单时**必须把原因带出来** —— 空可能是"本来就没有 dsh"，
+                //   也可能是"收窄失败、按规矩拒绝动手"。两者对用户的意义完全不同，不能都显示成
+                //   「本次范围内没有找到运行中的 dsh 进程」（那会把"我拒绝执行"说成"没东西可停"）。
+                if (pids == null || pids.Length == 0)
+                    return "本次**不会结束任何进程**。" + _lastScopeNote.Replace("\r\n", "").Replace("★ ", "");
                 var sb = new StringBuilder();
                 sb.Append("本次会结束 ").Append(pids.Length).Append(" 个 dsh 进程（");
                 for (int i = 0; i < pids.Length; i++)
@@ -1733,9 +1778,19 @@ namespace BigFatFishRescuer
             if (seen.Count == 0) sb.AppendLine("  （没有任何候选进程 —— 现在「停止服务」不会杀任何东西）");
             sb.AppendLine();
             sb.AppendLine("会结束：" + hit + " 个；会被跳过（身份不符/读不到命令行）：" + skip + " 个");
+            // ★★ 2026-09-23 加：**纯 ASCII 的机器可读判据行**。
+            //   为什么必须加：故障注入夹具要在**调 stop 之前**判断"这次收窄是不是失败并拒绝了"，
+            //   而中文行会被控制台代码页搅成乱码（拿它做断言等于断言一个看不见的东西）。
+            //   有这一行，夹具就能做 **fail-closed**：只要 refused_to_fallback=0 而名单非空，就**不调 stop**。
+            sb.AppendLine("KILL_SCOPE port=" + ActivePort.ToString(CultureInfo.InvariantCulture)
+                + " matched_on_port=" + _lastMatchedOnPort.ToString(CultureInfo.InvariantCulture)
+                + " candidates=" + _lastAllDshCount.ToString(CultureInfo.InvariantCulture)
+                + " refused_to_fallback=" + (_lastRefusedFallback ? "1" : "0")
+                + " allow_machine_wide=" + (AllowMachineWideKill ? "1" : "0"));
             sb.AppendLine("★ 判据①身份：只有命令行**入口指向 dsh 的 bin.js** 的 node 进程才会被结束，其余一律跳过；");
             sb.AppendLine("★ 判据②范围：默认**只动命令行带 `--port " + ActivePort.ToString(CultureInfo.InvariantCulture)
-                          + "` 的实例**，其它端口上的 dsh 不进名单（一个都没认出来才回退全机，且上面会写明）。");
+                          + "` 的实例**；**这个端口上没找到就默认拒绝动手**（不再回退全机）"
+                          + " —— 要动全机必须显式 `--all-dsh` 或 BFF_ALLOW_MACHINE_WIDE_KILL=1。");
             return sb.ToString();
         }
 
