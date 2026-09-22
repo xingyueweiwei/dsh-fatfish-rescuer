@@ -10,12 +10,16 @@
 
 ## 下载（不想自己编译的话）
 
-👉 **[Releases 页](https://github.com/xingyueweiwei/dsh-fatfish-rescuer/releases/latest)** —— 里面有打包好的便携版 zip：
-下载 → 解压 → 双击 `大肥鱼救星.exe`。包内附《先看这里》《如果被杀软误删》《异地实测清单》。
+**① 一键下载（文件就在本仓库里，点完直接开始下）**
 
-> 还没有 Release 的时候（或者你想要自己编译），按下面「30 秒上手」那节自己构建即可。
+👉 **[点这里下载便携版 zip](https://github.com/xingyueweiwei/dsh-fatfish-rescuer/raw/main/download/BigFatFishRescuer_v5.0.2_portable.zip)** —— 2,138,207 字节
+sha256：`845178EC3270C4B2BDC24437073BE45FDC274877060ABFEB629C006054B003ED`
 
-⚠️ **它是未签名的**，所以 Windows 可能弹 SmartScreen、杀软可能启发式报毒（这个工具会结束进程、改配置，天生像"可疑行为"）。要么自己编译、要么看包内《如果被杀软误删.md》。**代码全在这里，你可以自己核。**
+**② 或者去 [Releases 页](https://github.com/xingyueweiwei/dsh-fatfish-rescuer/releases)**（版本更新走那边）
+
+下载 → 解压 → 双击 `大肥鱼救星.exe`。包内附《先看这里》《如果被杀软误删》《异地实测清单》《给微软的误报申诉》《文件清单-SHA256.txt》。
+
+⚠️ **它是未签名的**：Windows 可能弹 SmartScreen、杀软可能启发式报毒（这个工具会结束进程、改配置，天生像"可疑行为"）。要么自己编译（见下）、要么照包内《如果被杀软误删.md》处理。**源码全在这里，你可以自己核。**
 
 ---
 
