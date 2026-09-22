@@ -10,12 +10,18 @@
 
 ## 下载（不想自己编译的话）
 
-**① 一键下载（文件就在本仓库里，点完直接开始下）**
+**① 一键下载（GitHub Release，最标准的那条路）**
 
-👉 **[点这里下载便携版 zip](https://github.com/xingyueweiwei/dsh-fatfish-rescuer/raw/main/download/BigFatFishRescuer_v5.0.3_portable.zip)** —— 2,124,190 字节
+👉 **[点这里直接下载 BigFatFishRescuer_v5.0.3_portable.zip](https://github.com/xingyueweiwei/dsh-fatfish-rescuer/releases/download/v5.0.3/BigFatFishRescuer_v5.0.3_portable.zip)** —— 2,124,190 字节
 sha256：`3B69C9640732C4CCCD334CEF91E6049FAEF4788919BD954156A792FE7946993A`
+（历史版本都在 [Releases 页](https://github.com/xingyueweiwei/dsh-fatfish-rescuer/releases)）
 
-**② 或者去 [Releases 页](https://github.com/xingyueweiwei/dsh-fatfish-rescuer/releases)**（版本更新走那边）
+**② 或者从仓库内直接下（同一个文件，备用镜像）**
+
+👉 **[仓库内直链](https://github.com/xingyueweiwei/dsh-fatfish-rescuer/raw/main/download/BigFatFishRescuer_v5.0.3_portable.zip)** —— 同 size / 同 sha256
+
+> 两条路拿到的是**同一个文件**（sha256 已实测一致）。Release 那条多带版本列表与下载计数；
+> 仓库内那条的好处是**克隆仓库本身就带着包**，不依赖 Releases 服务。
 
 下载 → 解压 → 双击 `大肥鱼救星.exe`。包内附《先看这里》《如果被杀软误删》《异地实测清单》《给微软的误报申诉》《文件清单-SHA256.txt》。
 
